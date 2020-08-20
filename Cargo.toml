@@ -1,8 +1,16 @@
 [package]
 name = "tracing-chrome"
 version = "0.1.0"
+
 authors = ["Thoren Paulson <thoren.paulson@gmail.com>"]
+categories = ["asynchronous", "development-tools::debugging", "development-tools::profiling"]
+description = "A Layer for tracing-subscriber that outputs Chrome-style traces."
+documentation = "https://docs.rs/tracing-chrome"
 edition = "2018"
+keywords = ["profiling", "tracing", "flamegraph", "subscriber"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/Antigroup/tracing-chrome"
 
 [dependencies]
 json = "0.12.4"
