@@ -1,0 +1,52 @@
+name: Check Commit
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        rust: [stable, beta, nightly]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Install Rust toolchain
+      run: |
+        rustup update ${{ matrix.rust }}
+        rustup default ${{ matrix.rust }}
+        rustup component add clippy
+    - name: Generate Cargo lockfile
+      run: cargo generate-lockfile --verbose
+    - name: Restore Cargo cache
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: cargo-${{ matrix.rust }}-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '.github/workflows/*') }}
+
+    - name: Clippy
+      run: cargo clippy --all-targets --all-features -- -D clippy::all
+    - name: Build
+      run: cargo build --verbose
+    - name: Run tests
+      run: cargo test --verbose
+
+  format:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Check format
+      run: cargo fmt --verbose -- --check --verbose
