@@ -2,7 +2,7 @@
 A tracing [Layer](`ChromeLayer`) for generating a trace that can be viewed by the Chrome Trace Viewer at `chrome://tracing`.
 
 # Usage
-```rust
+```no_run
 use tracing_chrome::ChromeLayerBuilder;
 use tracing_subscriber::{registry::Registry, prelude::*};
 
