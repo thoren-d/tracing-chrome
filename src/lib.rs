@@ -103,10 +103,24 @@ pub struct FlushGuard {
     handle: Cell<Option<JoinHandle<()>>>,
 }
 
+impl FlushGuard {
+    /// Signals the trace writing thread to flush to disk.
+    pub fn flush(&self) {
+        if let Some(handle) = self.handle.take() {
+            let _ignored = self.sender.send(Message::Flush);
+            self.handle.set(Some(handle));
+        }
+    }
+}
+
 impl Drop for FlushGuard {
     fn drop(&mut self) {
-        self.sender.send(Message::Flush).unwrap();
-        self.handle.take().unwrap().join().unwrap();
+        if let Some(handle) = self.handle.take() {
+            let _ignored = self.sender.send(Message::Drop);
+            if let Err(_) = handle.join() {
+                eprintln!("tracing_chrome: Trace writing thread panicked.");
+            }
+        }
     }
 }
 
@@ -124,6 +138,7 @@ enum Message {
     Exit(f64, Callsite),
     NewThread(u64, String),
     Flush,
+    Drop,
 }
 
 impl<S> ChromeLayer<S>
@@ -149,6 +164,9 @@ where
 
             for msg in rx {
                 if let Message::Flush = &msg {
+                    write.flush().unwrap();
+                    continue;
+                } else if let Message::Drop = &msg {
                     break;
                 }
 
@@ -159,7 +177,7 @@ where
                     Message::Event(ts, callsite) => ("I", Some(ts), Some(callsite)),
                     Message::Exit(ts, callsite) => ("E", Some(ts), Some(callsite)),
                     Message::NewThread(_tid, _name) => ("M", None, None),
-                    Message::Flush => panic!("Was supposed to break by now."),
+                    Message::Flush | Message::Drop => panic!("Was supposed to break by now."),
                 };
                 entry.insert("ph", ph.to_string().into());
                 entry.insert("pid", 1.into());
