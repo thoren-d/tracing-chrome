@@ -116,7 +116,7 @@ where
     }
 
     /// Sets the style used when recording trace events.
-    /// See `TraceStyle` for details.
+    /// See [`TraceStyle`](crate::TraceStyle) for details.
     pub fn trace_style(mut self, style: TraceStyle) -> Self {
         self.trace_style = style;
         self
