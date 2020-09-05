@@ -204,10 +204,14 @@ where
 
                 let (ph, ts, callsite, id) = match &msg {
                     Message::Enter(ts, callsite, None) => ("B", Some(ts), Some(callsite), None),
-                    Message::Enter(ts, callsite, Some(root_id)) => ("b", Some(ts), Some(callsite), Some(root_id)),
+                    Message::Enter(ts, callsite, Some(root_id)) => {
+                        ("b", Some(ts), Some(callsite), Some(root_id))
+                    }
                     Message::Event(ts, callsite) => ("I", Some(ts), Some(callsite), None),
                     Message::Exit(ts, callsite, None) => ("E", Some(ts), Some(callsite), None),
-                    Message::Exit(ts, callsite, Some(root_id)) => ("e", Some(ts), Some(callsite), Some(root_id)),
+                    Message::Exit(ts, callsite, Some(root_id)) => {
+                        ("e", Some(ts), Some(callsite), Some(root_id))
+                    }
                     Message::NewThread(_tid, _name) => ("M", None, None, None),
                     Message::Flush | Message::Drop => panic!("Was supposed to break by now."),
                 };
