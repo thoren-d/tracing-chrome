@@ -1,7 +1,7 @@
 tracing-chrome
 ======
 
-![Check Commit](https://github.com/Antigroup/tracing-chrome/workflows/Check%20Commit/badge.svg?branch=develop)
+![CI](https://github.com/Antigroup/tracing-chrome/workflows/CI/badge.svg?branch=develop)
 
 # Overview
 

@@ -1,4 +1,4 @@
-name: Check Commit
+name: CI
 
 on: [push, pull_request]
 
