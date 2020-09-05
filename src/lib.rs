@@ -14,7 +14,11 @@ tracing_subscriber::registry().with(chrome_layer).init();
 !*/
 
 use tracing::{span, Event, Metadata, Subscriber};
-use tracing_subscriber::{layer::Context, registry::LookupSpan, Layer};
+use tracing_subscriber::{
+    layer::Context,
+    registry::{LookupSpan, SpanRef},
+    Layer,
+};
 
 use json::{number::Number, object::Object, JsonValue};
 use std::{
@@ -45,6 +49,7 @@ where
     start: std::time::Instant,
     max_tid: AtomicU64,
     include_locations: bool,
+    trace_style: TraceStyle,
     _inner: PhantomData<S>,
 }
 
@@ -55,7 +60,24 @@ where
 {
     out_file: Option<String>,
     include_locations: bool,
+    trace_style: TraceStyle,
     _inner: PhantomData<S>,
+}
+
+/// Decides how traces will be recorded.
+pub enum TraceStyle {
+    /// Traces will be recorded as a group of threads.
+    /// In this style, spans should be entered and exited on the same thread.
+    Threaded,
+
+    /// Traces will recorded as a group of asynchronous operations.
+    Async,
+}
+
+impl Default for TraceStyle {
+    fn default() -> Self {
+        TraceStyle::Threaded
+    }
 }
 
 impl<S> ChromeLayerBuilder<S>
@@ -66,6 +88,7 @@ where
         ChromeLayerBuilder {
             out_file: None,
             include_locations: true,
+            trace_style: TraceStyle::Threaded,
             _inner: PhantomData::default(),
         }
     }
@@ -89,6 +112,13 @@ where
     */
     pub fn include_locations(mut self, include: bool) -> Self {
         self.include_locations = include;
+        self
+    }
+
+    /// Sets the style used when recording trace events.
+    /// See `TraceStyle` for details.
+    pub fn trace_style(mut self, style: TraceStyle) -> Self {
+        self.trace_style = style;
         self
     }
 
@@ -133,9 +163,9 @@ struct Callsite {
 }
 
 enum Message {
-    Enter(f64, Callsite),
+    Enter(f64, Callsite, Option<u64>),
     Event(f64, Callsite),
-    Exit(f64, Callsite),
+    Exit(f64, Callsite, Option<u64>),
     NewThread(u64, String),
     Flush,
     Drop,
@@ -172,11 +202,13 @@ where
 
                 let mut entry = Object::new();
 
-                let (ph, ts, callsite) = match &msg {
-                    Message::Enter(ts, callsite) => ("B", Some(ts), Some(callsite)),
-                    Message::Event(ts, callsite) => ("I", Some(ts), Some(callsite)),
-                    Message::Exit(ts, callsite) => ("E", Some(ts), Some(callsite)),
-                    Message::NewThread(_tid, _name) => ("M", None, None),
+                let (ph, ts, callsite, id) = match &msg {
+                    Message::Enter(ts, callsite, None) => ("B", Some(ts), Some(callsite), None),
+                    Message::Enter(ts, callsite, Some(root_id)) => ("b", Some(ts), Some(callsite), Some(root_id)),
+                    Message::Event(ts, callsite) => ("I", Some(ts), Some(callsite), None),
+                    Message::Exit(ts, callsite, None) => ("E", Some(ts), Some(callsite), None),
+                    Message::Exit(ts, callsite, Some(root_id)) => ("e", Some(ts), Some(callsite), Some(root_id)),
+                    Message::NewThread(_tid, _name) => ("M", None, None, None),
                     Message::Flush | Message::Drop => panic!("Was supposed to break by now."),
                 };
                 entry.insert("ph", ph.to_string().into());
@@ -195,6 +227,10 @@ where
                     entry.insert("name", callsite.name.into());
                     entry.insert("cat", callsite.target.into());
                     entry.insert("tid", callsite.tid.into());
+
+                    if let Some(&id) = id {
+                        entry.insert("id", id.into());
+                    }
 
                     if let (Some(file), Some(line)) = (callsite.file, callsite.line) {
                         let mut args = Object::new();
@@ -218,6 +254,7 @@ where
             start: std::time::Instant::now(),
             max_tid: AtomicU64::new(0),
             include_locations: builder.include_locations,
+            trace_style: builder.trace_style,
             _inner: PhantomData::default(),
         };
 
@@ -265,6 +302,33 @@ where
         }
     }
 
+    fn get_root_id(span: SpanRef<S>) -> u64 {
+        span.from_root()
+            .take(1)
+            .next()
+            .unwrap_or(span)
+            .id()
+            .into_u64()
+    }
+
+    fn enter_span(&self, span: SpanRef<S>, ts: f64) {
+        let callsite = self.get_callsite(span.metadata());
+        let root_id = match self.trace_style {
+            TraceStyle::Async => Some(ChromeLayer::get_root_id(span)),
+            _ => None,
+        };
+        self.send_message(Message::Enter(ts, callsite, root_id));
+    }
+
+    fn exit_span(&self, span: SpanRef<S>, ts: f64) {
+        let callsite = self.get_callsite(span.metadata());
+        let root_id = match self.trace_style {
+            TraceStyle::Async => Some(ChromeLayer::get_root_id(span)),
+            _ => None,
+        };
+        self.send_message(Message::Exit(ts, callsite, root_id));
+    }
+
     fn get_ts(&self) -> f64 {
         self.start.elapsed().as_nanos() as f64 / 1000.0
     }
@@ -272,10 +336,10 @@ where
     fn send_message(&self, message: Message) {
         OUT.with(move |val| {
             if val.borrow().is_some() {
-                val.borrow().as_ref().unwrap().send(message).unwrap();
+                let _ignored = val.borrow().as_ref().unwrap().send(message);
             } else {
                 let out = self.out.lock().unwrap().clone();
-                out.send(message).unwrap();
+                let _ignored = out.send(message);
                 val.replace(Some(out));
             }
         });
@@ -288,9 +352,11 @@ where
 {
     fn on_enter(&self, id: &span::Id, ctx: Context<'_, S>) {
         let ts = self.get_ts();
-        let span = ctx.span(id).expect("Span not present.");
-        let callsite = self.get_callsite(span.metadata());
-        self.send_message(Message::Enter(ts, callsite));
+        if let TraceStyle::Async = self.trace_style {
+            return;
+        }
+
+        self.enter_span(ctx.span(id).expect("Span not found."), ts);
     }
 
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
@@ -301,8 +367,27 @@ where
 
     fn on_exit(&self, id: &span::Id, ctx: Context<'_, S>) {
         let ts = self.get_ts();
-        let span = ctx.span(id).expect("Span not present.");
-        let callsite = self.get_callsite(span.metadata());
-        self.send_message(Message::Exit(ts, callsite));
+        if let TraceStyle::Async = self.trace_style {
+            return;
+        }
+        self.exit_span(ctx.span(id).expect("Span not found."), ts);
+    }
+
+    fn new_span(&self, _attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
+        let ts = self.get_ts();
+        if let TraceStyle::Threaded = self.trace_style {
+            return;
+        }
+
+        self.enter_span(ctx.span(id).expect("Span not found."), ts);
+    }
+
+    fn on_close(&self, id: span::Id, ctx: Context<'_, S>) {
+        let ts = self.get_ts();
+        if let TraceStyle::Threaded = self.trace_style {
+            return;
+        }
+
+        self.exit_span(ctx.span(&id).expect("Span not found."), ts);
     }
 }
