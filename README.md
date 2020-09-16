@@ -4,7 +4,7 @@ tracing-chrome
 [![Crates.io](https://img.shields.io/crates/v/tracing-chrome)](https://crates.io/crates/tracing-chrome)
 [![Documentation](https://docs.rs/tracing-chrome/badge.svg)](https://docs.rs/tracing-chrome/)
 ![GitHub](https://img.shields.io/github/license/Antigroup/tracing-chrome)
-![CI](https://github.com/Antigroup/tracing-chrome/workflows/CI/badge.svg?branch=develop)
+![CI](https://github.com/thoren-d/tracing-chrome/workflows/CI/badge.svg?branch=develop)
 
 # Overview
 

@@ -10,7 +10,7 @@ edition = "2018"
 keywords = ["profiling", "tracing", "flamegraph", "subscriber"]
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/Antigroup/tracing-chrome"
+repository = "https://github.com/thoren-d/tracing-chrome"
 
 [dependencies]
 json = "0.12.4"
