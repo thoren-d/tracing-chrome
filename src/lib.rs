@@ -15,10 +15,7 @@ tracing_subscriber::registry().with(chrome_layer).init();
 
 use tracing::{span, Event, Metadata, Subscriber};
 use tracing_subscriber::{
-    fmt::{
-        format::DefaultFields,
-        FormattedFields,
-    },
+    fmt::{format::DefaultFields, FormattedFields},
     layer::Context,
     registry::{LookupSpan, SpanRef},
     Layer,
