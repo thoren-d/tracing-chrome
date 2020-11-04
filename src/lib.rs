@@ -15,6 +15,10 @@ tracing_subscriber::registry().with(chrome_layer).init();
 
 use tracing::{span, Event, Metadata, Subscriber};
 use tracing_subscriber::{
+    fmt::{
+        format::DefaultFields,
+        FormattedFields,
+    },
     layer::Context,
     registry::{LookupSpan, SpanRef},
     Layer,
@@ -156,7 +160,7 @@ impl Drop for FlushGuard {
 
 struct Callsite {
     tid: u64,
-    name: &'static str,
+    name: String,
     target: &'static str,
     file: Option<&'static str>,
     line: Option<u32>,
@@ -228,7 +232,7 @@ where
                     let ts = ts.unwrap();
                     let callsite = callsite.unwrap();
                     entry.insert("ts", JsonValue::Number(Number::from(*ts)));
-                    entry.insert("name", callsite.name.into());
+                    entry.insert("name", callsite.name.clone().into());
                     entry.insert("cat", callsite.target.into());
                     entry.insert("tid", callsite.tid.into());
 
@@ -279,9 +283,8 @@ where
         })
     }
 
-    fn get_callsite(&self, data: &'static Metadata) -> Callsite {
+    fn get_callsite(&self, data: &'static Metadata<'static>, name: String) -> Callsite {
         let (tid, new_thread) = self.get_tid();
-        let name = data.name();
         let target = data.target();
         let (file, line) = if self.include_locations {
             (data.file(), data.line())
@@ -306,6 +309,22 @@ where
         }
     }
 
+    fn get_callsite_for_event(&self, event: &Event) -> Callsite {
+        let data = event.metadata();
+        let name = data.name().to_string();
+        self.get_callsite(data, name)
+    }
+
+    fn get_callsite_for_span(&self, span: &SpanRef<S>) -> Callsite {
+        let data = span.metadata();
+        let name = if let Some(fields) = span.extensions().get::<FormattedFields<DefaultFields>>() {
+            format!("{}: {}", span.metadata().name(), fields.fields.as_str())
+        } else {
+            span.metadata().name().to_string()
+        };
+        self.get_callsite(data, name)
+    }
+
     fn get_root_id(span: SpanRef<S>) -> u64 {
         span.from_root()
             .take(1)
@@ -316,7 +335,7 @@ where
     }
 
     fn enter_span(&self, span: SpanRef<S>, ts: f64) {
-        let callsite = self.get_callsite(span.metadata());
+        let callsite = self.get_callsite_for_span(&span);
         let root_id = match self.trace_style {
             TraceStyle::Async => Some(ChromeLayer::get_root_id(span)),
             _ => None,
@@ -325,7 +344,7 @@ where
     }
 
     fn exit_span(&self, span: SpanRef<S>, ts: f64) {
-        let callsite = self.get_callsite(span.metadata());
+        let callsite = self.get_callsite_for_span(&span);
         let root_id = match self.trace_style {
             TraceStyle::Async => Some(ChromeLayer::get_root_id(span)),
             _ => None,
@@ -365,7 +384,7 @@ where
 
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let ts = self.get_ts();
-        let callsite = self.get_callsite(event.metadata());
+        let callsite = self.get_callsite_for_event(event);
         self.send_message(Message::Event(ts, callsite));
     }
 
