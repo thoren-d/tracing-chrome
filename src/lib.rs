@@ -352,8 +352,8 @@ where
             EventOrSpan::Event(e) => e.metadata(),
             EventOrSpan::Span(s) => s.metadata(),
         };
-        let name = name.unwrap_or(meta.name().into());
-        let target = target.unwrap_or(meta.target().into());
+        let name = name.unwrap_or_else(|| meta.name().into());
+        let target = target.unwrap_or_else(|| meta.target().into());
         let (file, line) = if self.include_locations {
             (meta.file(), meta.line())
         } else {
