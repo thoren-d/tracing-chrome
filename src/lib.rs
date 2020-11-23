@@ -13,7 +13,7 @@ tracing_subscriber::registry().with(chrome_layer).init();
 
 !*/
 
-use tracing::{span, Event, Metadata, Subscriber};
+use tracing::{span, Event, Subscriber};
 use tracing_subscriber::{
     layer::Context,
     registry::{LookupSpan, SpanRef},
@@ -41,6 +41,8 @@ thread_local! {
     static TID: RefCell<Option<u64>> = RefCell::new(None);
 }
 
+type NameFn<S> = Box<dyn Fn(&EventOrSpan<'_, '_, S>) -> String + Send + Sync>;
+
 pub struct ChromeLayer<S>
 where
     S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
@@ -50,6 +52,8 @@ where
     max_tid: AtomicU64,
     include_locations: bool,
     trace_style: TraceStyle,
+    name_fn: Option<NameFn<S>>,
+    cat_fn: Option<NameFn<S>>,
     _inner: PhantomData<S>,
 }
 
@@ -59,6 +63,8 @@ where
     S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
 {
     out_file: Option<String>,
+    name_fn: Option<NameFn<S>>,
+    cat_fn: Option<NameFn<S>>,
     include_locations: bool,
     trace_style: TraceStyle,
     _inner: PhantomData<S>,
@@ -87,6 +93,8 @@ where
     pub fn new() -> Self {
         ChromeLayerBuilder {
             out_file: None,
+            name_fn: None,
+            cat_fn: None,
             include_locations: true,
             trace_style: TraceStyle::Threaded,
             _inner: PhantomData::default(),
@@ -119,6 +127,47 @@ where
     /// See [`TraceStyle`](crate::TraceStyle) for details.
     pub fn trace_style(mut self, style: TraceStyle) -> Self {
         self.trace_style = style;
+        self
+    }
+
+    /// Allows supplying a function that derives a name from
+    /// an Event or Span. The result is used as the "name" field
+    /// on trace entries.
+    ///
+    /// # Example
+    /// ```
+    /// use tracing_chrome::{ChromeLayerBuilder, EventOrSpan};
+    /// use tracing_subscriber::{registry::Registry, prelude::*};
+    ///
+    /// let (chrome_layer, _guard) = ChromeLayerBuilder::new().name_fn(Box::new(|event_or_span| {
+    ///     match event_or_span {
+    ///         EventOrSpan::Event(ev) => { ev.metadata().name().into() },
+    ///         EventOrSpan::Span(_s) => { "span".into() },
+    ///     }
+    /// })).build();
+    /// tracing_subscriber::registry().with(chrome_layer).init()
+    /// ```
+    pub fn name_fn(mut self, name_fn: NameFn<S>) -> Self {
+        self.name_fn = Some(name_fn);
+        self
+    }
+
+    /// Allows supplying a function that derives a category from
+    /// an Event or Span. The result is used as the "cat" field on
+    /// trace entries.
+    ///
+    /// # Example
+    /// ```
+    /// use tracing_chrome::{ChromeLayerBuilder, EventOrSpan};
+    /// use tracing_subscriber::{registry::Registry, prelude::*};
+    ///
+    /// let (chrome_layer, _guard) = ChromeLayerBuilder::new().category_fn(Box::new(|_| {
+    ///     "my_module".into()
+    /// })).build();
+    /// tracing_subscriber::registry().with(chrome_layer).init()
+    /// ```
+    pub fn category_fn(mut self, cat_fn: NameFn<S>) -> Self {
+        self.cat_fn = Some(cat_fn);
         self
     }
 
@@ -156,8 +205,8 @@ impl Drop for FlushGuard {
 
 struct Callsite {
     tid: u64,
-    name: &'static str,
-    target: &'static str,
+    name: String,
+    target: String,
     file: Option<&'static str>,
     line: Option<u32>,
 }
@@ -171,11 +220,19 @@ enum Message {
     Drop,
 }
 
+pub enum EventOrSpan<'a, 'b, S>
+where
+    S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
+{
+    Event(&'a Event<'b>),
+    Span(&'a SpanRef<'b, S>),
+}
+
 impl<S> ChromeLayer<S>
 where
     S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
 {
-    fn new(builder: ChromeLayerBuilder<S>) -> (ChromeLayer<S>, FlushGuard) {
+    fn new(mut builder: ChromeLayerBuilder<S>) -> (ChromeLayer<S>, FlushGuard) {
         let (tx, rx) = std::sync::mpsc::channel::<Message>();
         OUT.with(|val| val.replace(Some(tx.clone())));
 
@@ -228,8 +285,8 @@ where
                     let ts = ts.unwrap();
                     let callsite = callsite.unwrap();
                     entry.insert("ts", JsonValue::Number(Number::from(*ts)));
-                    entry.insert("name", callsite.name.into());
-                    entry.insert("cat", callsite.target.into());
+                    entry.insert("name", callsite.name.clone().into());
+                    entry.insert("cat", callsite.target.clone().into());
                     entry.insert("tid", callsite.tid.into());
 
                     if let Some(&id) = id {
@@ -257,6 +314,8 @@ where
             out: Arc::new(Mutex::new(tx)),
             start: std::time::Instant::now(),
             max_tid: AtomicU64::new(0),
+            name_fn: builder.name_fn.take(),
+            cat_fn: builder.cat_fn.take(),
             include_locations: builder.include_locations,
             trace_style: builder.trace_style,
             _inner: PhantomData::default(),
@@ -279,12 +338,24 @@ where
         })
     }
 
-    fn get_callsite(&self, data: &'static Metadata) -> Callsite {
+    fn get_callsite(&self, data: EventOrSpan<S>) -> Callsite {
         let (tid, new_thread) = self.get_tid();
-        let name = data.name();
-        let target = data.target();
+        let name = match &self.name_fn {
+            Some(name_fn) => Some(name_fn(&data)),
+            None => None,
+        };
+        let target = match &self.cat_fn {
+            Some(cat_fn) => Some(cat_fn(&data)),
+            None => None,
+        };
+        let meta = match data {
+            EventOrSpan::Event(e) => e.metadata(),
+            EventOrSpan::Span(s) => s.metadata(),
+        };
+        let name = name.unwrap_or(meta.name().into());
+        let target = target.unwrap_or(meta.target().into());
         let (file, line) = if self.include_locations {
-            (data.file(), data.line())
+            (meta.file(), meta.line())
         } else {
             (None, None)
         };
@@ -316,7 +387,7 @@ where
     }
 
     fn enter_span(&self, span: SpanRef<S>, ts: f64) {
-        let callsite = self.get_callsite(span.metadata());
+        let callsite = self.get_callsite(EventOrSpan::Span(&span));
         let root_id = match self.trace_style {
             TraceStyle::Async => Some(ChromeLayer::get_root_id(span)),
             _ => None,
@@ -325,7 +396,7 @@ where
     }
 
     fn exit_span(&self, span: SpanRef<S>, ts: f64) {
-        let callsite = self.get_callsite(span.metadata());
+        let callsite = self.get_callsite(EventOrSpan::Span(&span));
         let root_id = match self.trace_style {
             TraceStyle::Async => Some(ChromeLayer::get_root_id(span)),
             _ => None,
@@ -365,7 +436,7 @@ where
 
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let ts = self.get_ts();
-        let callsite = self.get_callsite(event.metadata());
+        let callsite = self.get_callsite(EventOrSpan::Event(event));
         self.send_message(Message::Event(ts, callsite));
     }
 
