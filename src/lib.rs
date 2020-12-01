@@ -50,6 +50,7 @@ where
     out: Arc<Mutex<Sender<Message>>>,
     start: std::time::Instant,
     max_tid: AtomicU64,
+    include_args: bool,
     include_locations: bool,
     trace_style: TraceStyle,
     name_fn: Option<NameFn<S>>,
@@ -65,6 +66,7 @@ where
     out_file: Option<String>,
     name_fn: Option<NameFn<S>>,
     cat_fn: Option<NameFn<S>>,
+    include_args: bool,
     include_locations: bool,
     trace_style: TraceStyle,
     _inner: PhantomData<S>,
@@ -95,6 +97,7 @@ where
             out_file: None,
             name_fn: None,
             cat_fn: None,
+            include_args: false,
             include_locations: true,
             trace_style: TraceStyle::Threaded,
             _inner: PhantomData::default(),
@@ -108,6 +111,18 @@ where
     */
     pub fn file(mut self, file: String) -> Self {
         self.out_file = Some(file);
+        self
+    }
+
+    /**
+    Include arguments in each trace entry.
+
+    Defaults to false.
+
+    Includes the arguments used when creating a span/event in the "args" section of the trace entry.
+    */
+    pub fn include_args(mut self, include: bool) -> Self {
+        self.include_args = include;
         self
     }
 
@@ -209,6 +224,7 @@ struct Callsite {
     target: String,
     file: Option<&'static str>,
     line: Option<u32>,
+    args: Option<Arc<Object>>,
 }
 
 enum Message {
@@ -264,7 +280,7 @@ where
                     Message::Enter(ts, callsite, Some(root_id)) => {
                         ("b", Some(ts), Some(callsite), Some(root_id))
                     }
-                    Message::Event(ts, callsite) => ("I", Some(ts), Some(callsite), None),
+                    Message::Event(ts, callsite) => ("i", Some(ts), Some(callsite), None),
                     Message::Exit(ts, callsite, None) => ("E", Some(ts), Some(callsite), None),
                     Message::Exit(ts, callsite, Some(root_id)) => {
                         ("e", Some(ts), Some(callsite), Some(root_id))
@@ -293,10 +309,23 @@ where
                         entry.insert("id", id.into());
                     }
 
+                    if ph == "i" {
+                        entry.insert("s", "p".into());
+                    }
+
+                    let mut args = Object::new();
                     if let (Some(file), Some(line)) = (callsite.file, callsite.line) {
-                        let mut args = Object::new();
                         args.insert("[file]", file.to_string().into());
                         args.insert("[line]", line.into());
+                    }
+
+                    if let Some(call_args) = &callsite.args {
+                        for (k, v) in call_args.iter() {
+                            args.insert(k, v.clone());
+                        }
+                    }
+
+                    if !args.is_empty() {
                         entry.insert("args", args.into());
                     }
                 }
@@ -316,6 +345,7 @@ where
             max_tid: AtomicU64::new(0),
             name_fn: builder.name_fn.take(),
             cat_fn: builder.cat_fn.take(),
+            include_args: builder.include_args,
             include_locations: builder.include_locations,
             trace_style: builder.trace_style,
             _inner: PhantomData::default(),
@@ -352,6 +382,21 @@ where
             EventOrSpan::Event(e) => e.metadata(),
             EventOrSpan::Span(s) => s.metadata(),
         };
+        let args = match data {
+            EventOrSpan::Event(e) => {
+                if self.include_args {
+                    let mut args = Object::new();
+                    e.record(&mut JsonVisitor { object: &mut args });
+                    Some(Arc::new(args))
+                } else {
+                    None
+                }
+            }
+            EventOrSpan::Span(s) => s
+                .extensions()
+                .get::<ArgsWrapper>()
+                .map(|e| Arc::clone(&e.args)),
+        };
         let name = name.unwrap_or_else(|| meta.name().into());
         let target = target.unwrap_or_else(|| meta.target().into());
         let (file, line) = if self.include_locations {
@@ -374,6 +419,7 @@ where
             target,
             file,
             line,
+            args,
         }
     }
 
@@ -448,8 +494,15 @@ where
         self.exit_span(ctx.span(id).expect("Span not found."), ts);
     }
 
-    fn new_span(&self, _attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
+    fn new_span(&self, attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
         let ts = self.get_ts();
+        if self.include_args {
+            let mut args = Object::new();
+            attrs.record(&mut JsonVisitor { object: &mut args });
+            ctx.span(id).unwrap().extensions_mut().insert(ArgsWrapper {
+                args: Arc::new(args),
+            });
+        }
         if let TraceStyle::Threaded = self.trace_style {
             return;
         }
@@ -465,4 +518,19 @@ where
 
         self.exit_span(ctx.span(&id).expect("Span not found."), ts);
     }
+}
+
+struct JsonVisitor<'a> {
+    object: &'a mut json::object::Object,
+}
+
+impl<'a> tracing_subscriber::field::Visit for JsonVisitor<'a> {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        self.object
+            .insert(field.name(), JsonValue::String(format!("{:?}", value)));
+    }
+}
+
+struct ArgsWrapper {
+    args: Arc<Object>,
 }
