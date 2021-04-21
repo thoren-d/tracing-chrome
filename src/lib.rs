@@ -331,7 +331,7 @@ where
                 }
 
                 write.write_all(entry.dump().as_bytes()).unwrap();
-                write.write_all(b",").unwrap();
+                write.write_all(b",\n").unwrap();
             }
         });
 
