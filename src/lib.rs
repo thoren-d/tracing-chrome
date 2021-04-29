@@ -370,14 +370,8 @@ where
 
     fn get_callsite(&self, data: EventOrSpan<S>) -> Callsite {
         let (tid, new_thread) = self.get_tid();
-        let name = match &self.name_fn {
-            Some(name_fn) => Some(name_fn(&data)),
-            None => None,
-        };
-        let target = match &self.cat_fn {
-            Some(cat_fn) => Some(cat_fn(&data)),
-            None => None,
-        };
+        let name = self.name_fn.as_ref().map(|name_fn| name_fn(&data));
+        let target = self.cat_fn.as_ref().map(|cat_fn| cat_fn(&data));
         let meta = match data {
             EventOrSpan::Event(e) => e.metadata(),
             EventOrSpan::Span(s) => s.metadata(),
