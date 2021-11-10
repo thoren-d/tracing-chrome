@@ -15,4 +15,4 @@ repository = "https://github.com/thoren-d/tracing-chrome"
 [dependencies]
 json = "0.12.4"
 tracing = "0.1.21"
-tracing-subscriber = "0.2.15"
+tracing-subscriber = "0.3.1"

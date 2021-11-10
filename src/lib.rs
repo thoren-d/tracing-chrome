@@ -418,7 +418,8 @@ where
     }
 
     fn get_root_id(span: SpanRef<S>) -> u64 {
-        span.from_root()
+        span.scope()
+            .from_root()
             .take(1)
             .next()
             .unwrap_or(span)
@@ -488,7 +489,7 @@ where
         self.exit_span(ctx.span(id).expect("Span not found."), ts);
     }
 
-    fn new_span(&self, attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
+    fn on_new_span(&self, attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
         let ts = self.get_ts();
         if self.include_args {
             let mut args = Object::new();
