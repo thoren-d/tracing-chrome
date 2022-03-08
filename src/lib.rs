@@ -23,6 +23,7 @@ use tracing_subscriber::{
 use json::{number::Number, object::Object, JsonValue};
 use std::{
     marker::PhantomData,
+    path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering},
         mpsc::Sender,
@@ -63,7 +64,7 @@ pub struct ChromeLayerBuilder<S>
 where
     S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
 {
-    out_file: Option<String>,
+    out_file: Option<PathBuf>,
     name_fn: Option<NameFn<S>>,
     cat_fn: Option<NameFn<S>>,
     include_args: bool,
@@ -109,7 +110,7 @@ where
 
     Defaults to "./trace-{unix epoch time}.json"
     */
-    pub fn file(mut self, file: String) -> Self {
+    pub fn file(mut self, file: PathBuf) -> Self {
         self.out_file = Some(file);
         self
     }
@@ -252,13 +253,13 @@ where
         let (tx, rx) = std::sync::mpsc::channel::<Message>();
         OUT.with(|val| val.replace(Some(tx.clone())));
 
-        let out_file = builder.out_file.unwrap_or(format!(
+        let out_file = builder.out_file.unwrap_or(PathBuf::from(format!(
             "./trace-{}.json",
             std::time::SystemTime::UNIX_EPOCH
                 .elapsed()
                 .unwrap()
                 .as_secs()
-        ));
+        )));
 
         let handle = std::thread::spawn(move || {
             let write = std::fs::File::create(out_file).unwrap();
