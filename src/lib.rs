@@ -263,8 +263,9 @@ where
         let handle = std::thread::spawn(move || {
             let write = std::fs::File::create(out_file).unwrap();
             let mut write = BufWriter::new(write);
-            write.write_all(b"[").unwrap();
+            write.write_all(b"[\n").unwrap();
 
+            let mut has_started = false;
             for msg in rx {
                 if let Message::Flush = &msg {
                     write.flush().unwrap();
@@ -330,9 +331,15 @@ where
                     }
                 }
 
+                if has_started {
+                    write.write_all(b",\n").unwrap();
+                }
                 write.write_all(entry.dump().as_bytes()).unwrap();
-                write.write_all(b",\n").unwrap();
+                has_started = true;
             }
+
+            write.write_all(b"\n]").unwrap();
+            write.flush().unwrap();
         });
 
         let guard = FlushGuard {
