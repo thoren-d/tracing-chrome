@@ -23,6 +23,7 @@ use tracing_subscriber::{
 use json::{number::Number, object::Object, JsonValue};
 use std::{
     marker::PhantomData,
+    path::Path,
     path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -110,8 +111,8 @@ where
 
     Defaults to "./trace-{unix epoch time}.json"
     */
-    pub fn file(mut self, file: PathBuf) -> Self {
-        self.out_file = Some(file);
+    pub fn file<P: AsRef<Path>>(mut self, file: P) -> Self {
+        self.out_file = Some(file.as_ref().into());
         self
     }
 
