@@ -489,17 +489,14 @@ where
     fn on_record(&self, id: &span::Id, values: &span::Record<'_>, ctx: Context<'_, S>) {
         if self.include_args {
             let span = ctx.span(id).unwrap();
-            let mut exts = span
-                .extensions_mut();
+            let mut exts = span.extensions_mut();
 
-            let args = exts
-                .get_mut::<ArgsWrapper>();
+            let args = exts.get_mut::<ArgsWrapper>();
 
             if let Some(args) = args {
                 let args = Arc::make_mut(&mut args.args);
                 values.record(&mut JsonVisitor { object: args });
             }
-
         }
     }
 
