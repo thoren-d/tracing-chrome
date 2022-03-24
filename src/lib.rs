@@ -254,13 +254,15 @@ where
         let (tx, rx) = std::sync::mpsc::channel::<Message>();
         OUT.with(|val| val.replace(Some(tx.clone())));
 
-        let out_file = builder.out_file.unwrap_or_else(|| PathBuf::from(format!(
-            "./trace-{}.json",
-            std::time::SystemTime::UNIX_EPOCH
-                .elapsed()
-                .unwrap()
-                .as_secs()
-        )));
+        let out_file = builder.out_file.unwrap_or_else(|| {
+            PathBuf::from(format!(
+                "./trace-{}.json",
+                std::time::SystemTime::UNIX_EPOCH
+                    .elapsed()
+                    .unwrap()
+                    .as_secs()
+            ))
+        });
 
         let handle = std::thread::spawn(move || {
             let write = std::fs::File::create(out_file).unwrap();
