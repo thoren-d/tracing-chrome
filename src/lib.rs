@@ -486,6 +486,23 @@ where
         self.enter_span(ctx.span(id).expect("Span not found."), ts);
     }
 
+    fn on_record(&self, id: &span::Id, values: &span::Record<'_>, ctx: Context<'_, S>) {
+        if self.include_args {
+            let span = ctx.span(id).unwrap();
+            let mut exts = span
+                .extensions_mut();
+
+            let args = exts
+                .get_mut::<ArgsWrapper>();
+
+            if let Some(args) = args {
+                let args = Arc::make_mut(&mut args.args);
+                values.record(&mut JsonVisitor { object: args });
+            }
+
+        }
+    }
+
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let ts = self.get_ts();
         let callsite = self.get_callsite(EventOrSpan::Event(event));
