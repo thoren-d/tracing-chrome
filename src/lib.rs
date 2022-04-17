@@ -478,11 +478,11 @@ where
     S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
 {
     fn on_enter(&self, id: &span::Id, ctx: Context<'_, S>) {
-        let ts = self.get_ts();
         if let TraceStyle::Async = self.trace_style {
             return;
         }
-
+        
+        let ts = self.get_ts();
         self.enter_span(ctx.span(id).expect("Span not found."), ts);
     }
 
@@ -507,15 +507,14 @@ where
     }
 
     fn on_exit(&self, id: &span::Id, ctx: Context<'_, S>) {
-        let ts = self.get_ts();
         if let TraceStyle::Async = self.trace_style {
             return;
         }
+        let ts = self.get_ts();
         self.exit_span(ctx.span(id).expect("Span not found."), ts);
     }
 
     fn on_new_span(&self, attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
-        let ts = self.get_ts();
         if self.include_args {
             let mut args = Object::new();
             attrs.record(&mut JsonVisitor { object: &mut args });
@@ -526,16 +525,17 @@ where
         if let TraceStyle::Threaded = self.trace_style {
             return;
         }
-
+        
+        let ts = self.get_ts();
         self.enter_span(ctx.span(id).expect("Span not found."), ts);
     }
 
     fn on_close(&self, id: span::Id, ctx: Context<'_, S>) {
-        let ts = self.get_ts();
         if let TraceStyle::Threaded = self.trace_style {
             return;
         }
-
+        
+        let ts = self.get_ts();
         self.exit_span(ctx.span(&id).expect("Span not found."), ts);
     }
 }
