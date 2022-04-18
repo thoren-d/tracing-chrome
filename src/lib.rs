@@ -13,6 +13,8 @@ tracing_subscriber::registry().with(chrome_layer).init();
 
 !*/
 
+use crossbeam::channel::Sender;
+
 use tracing::{span, Event, Subscriber};
 use tracing_subscriber::{
     layer::Context,
@@ -27,7 +29,6 @@ use std::{
     path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering},
-        mpsc::Sender,
         Arc, Mutex,
     },
 };
@@ -251,7 +252,7 @@ where
     S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
 {
     fn new(mut builder: ChromeLayerBuilder<S>) -> (ChromeLayer<S>, FlushGuard) {
-        let (tx, rx) = std::sync::mpsc::channel::<Message>();
+        let (tx, rx) = crossbeam::channel::unbounded();
         OUT.with(|val| val.replace(Some(tx.clone())));
 
         let out_file = builder.out_file.unwrap_or_else(|| {
@@ -481,7 +482,7 @@ where
         if let TraceStyle::Async = self.trace_style {
             return;
         }
-        
+
         let ts = self.get_ts();
         self.enter_span(ctx.span(id).expect("Span not found."), ts);
     }
@@ -525,7 +526,7 @@ where
         if let TraceStyle::Threaded = self.trace_style {
             return;
         }
-        
+
         let ts = self.get_ts();
         self.enter_span(ctx.span(id).expect("Span not found."), ts);
     }
@@ -534,7 +535,7 @@ where
         if let TraceStyle::Threaded = self.trace_style {
             return;
         }
-        
+
         let ts = self.get_ts();
         self.exit_span(ctx.span(&id).expect("Span not found."), ts);
     }

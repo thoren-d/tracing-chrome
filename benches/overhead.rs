@@ -58,7 +58,7 @@ fn event_benchmark(c: &mut Criterion) {
             .build();
         let _subscriber = tracing_subscriber::registry().with(layer).set_default();
         b.iter(|| {
-            black_box(info!(arg = 42, "Something Happen"));
+            info!(arg = 42, "Something Happen");
         });
     });
     group.bench_function("locations", |b| {
@@ -68,7 +68,7 @@ fn event_benchmark(c: &mut Criterion) {
             .build();
         let _subscriber = tracing_subscriber::registry().with(layer).set_default();
         b.iter(|| {
-            black_box(info!(arg = 42, "Something Happen"));
+            info!(arg = 42, "Something Happen");
         });
     });
     group.bench_function("minimal", |b| {
@@ -78,7 +78,7 @@ fn event_benchmark(c: &mut Criterion) {
             .build();
         let _subscriber = tracing_subscriber::registry().with(layer).set_default();
         b.iter(|| {
-            black_box(info!(arg = 42, "Something Happen"));
+            info!(arg = 42, "Something Happen");
         });
     });
 }
