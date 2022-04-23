@@ -21,10 +21,15 @@ fn fibonacci_parallel(n: usize) -> usize {
 }
 
 fn main() {
-    let (chrome_layer, _guard) = tracing_chrome::ChromeLayerBuilder::new()
-        .include_args(true)
-        .build();
-    tracing_subscriber::registry().with(chrome_layer).init();
+    let _guard = if std::env::args().any(|arg| arg == "--no-trace") {
+        None
+    } else {
+        let (chrome_layer, guard) = tracing_chrome::ChromeLayerBuilder::new()
+            .include_args(true)
+            .build();
+        tracing_subscriber::registry().with(chrome_layer).init();
+        Some(guard)
+    };
 
     let before = std::time::Instant::now();
     println!("fibonacci_serial(28) -> {}", fibonacci(28));

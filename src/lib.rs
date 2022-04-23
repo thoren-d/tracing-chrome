@@ -8,10 +8,9 @@ use tracing_subscriber::{registry::Registry, prelude::*};
 
 let (chrome_layer, _guard) = ChromeLayerBuilder::new().build();
 tracing_subscriber::registry().with(chrome_layer).init();
-
 ```
 
-!*/
+*/
 
 use crossbeam::channel::Sender;
 
@@ -26,7 +25,6 @@ use json::{number::Number, object::Object, JsonValue};
 use std::{
     marker::PhantomData,
     path::Path,
-    path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
@@ -46,6 +44,7 @@ thread_local! {
 
 type NameFn<S> = Box<dyn Fn(&EventOrSpan<'_, '_, S>) -> String + Send + Sync>;
 
+/// A [`Layer`](tracing_subscriber::Layer) that writes a Chrome trace file.
 pub struct ChromeLayer<S>
 where
     S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
@@ -61,12 +60,13 @@ where
     _inner: PhantomData<S>,
 }
 
+/// A builder for [`ChromeLayer`](crate::ChromeLayer).
 #[derive(Default)]
 pub struct ChromeLayerBuilder<S>
 where
     S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
 {
-    out_file: Option<PathBuf>,
+    out_writer: Option<Box<dyn Write + Send>>,
     name_fn: Option<NameFn<S>>,
     cat_fn: Option<NameFn<S>>,
     include_args: bool,
@@ -97,7 +97,7 @@ where
 {
     pub fn new() -> Self {
         ChromeLayerBuilder {
-            out_file: None,
+            out_writer: None,
             name_fn: None,
             cat_fn: None,
             include_args: false,
@@ -107,35 +107,45 @@ where
         }
     }
 
-    /**
-    Set the file to which to output the trace.
+    /// Set the file to which to output the trace.
+    ///
+    /// Defaults to `./trace-{unix epoch time}.json`.
+    ///
+    /// # Panics
+    ///
+    /// If `file` could not be opened/created.
+    pub fn file<P: AsRef<Path>>(self, file: P) -> Self {
+        self.writer(std::fs::File::create(file).expect("Failed to create trace file."))
+    }
 
-    Defaults to "./trace-{unix epoch time}.json"
-    */
-    pub fn file<P: AsRef<Path>>(mut self, file: P) -> Self {
-        self.out_file = Some(file.as_ref().into());
+    /// Supply an arbitrary writer to which to write trace contents.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use tracing_chrome::ChromeLayerBuilder;
+    /// # use tracing_subscriber::prelude::*;
+    /// let (layer, guard) = ChromeLayerBuilder::new().writer(std::io::sink()).build();
+    /// # tracing_subscriber::registry().with(layer).init();
+    /// ```
+    pub fn writer<W: Write + Send + 'static>(mut self, writer: W) -> Self {
+        self.out_writer = Some(Box::new(writer));
         self
     }
 
-    /**
-    Include arguments in each trace entry.
-
-    Defaults to false.
-
-    Includes the arguments used when creating a span/event in the "args" section of the trace entry.
-    */
+    /// Include arguments in each trace entry.
+    ///
+    /// Defaults to false. Includes the arguments used when creating a span/event
+    /// in the "args" section of the trace entry.
     pub fn include_args(mut self, include: bool) -> Self {
         self.include_args = include;
         self
     }
 
-    /**
-    Include file+line with each trace entry.
-
-    Defaults to true.
-
-    This can add quite a bit of data to the output so turning it off might be helpful when collecting larger traces.
-    */
+    /// Include file+line with each trace entry.
+    ///
+    /// Defaults to true. This can add quite a bit of data to the output so turning
+    /// it off might be helpful when collecting larger traces.
     pub fn include_locations(mut self, include: bool) -> Self {
         self.include_locations = include;
         self
@@ -189,6 +199,11 @@ where
         self
     }
 
+    /// Creates a [`ChromeLayer`](crate::ChromeLayer) and associated [`FlushGuard`](crate::FlushGuard).
+    ///
+    /// # Panics
+    ///
+    /// If no file or writer was specified and the default trace file could not be opened/created.
     pub fn build(self) -> (ChromeLayer<S>, FlushGuard) {
         ChromeLayer::new(self)
     }
@@ -239,6 +254,7 @@ enum Message {
     Drop,
 }
 
+/// Represents either an [`Event`](tracing::Event) or [`SpanRef`](tracing_subscriber::registry::SpanRef).
 pub enum EventOrSpan<'a, 'b, S>
 where
     S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
@@ -255,19 +271,21 @@ where
         let (tx, rx) = crossbeam::channel::unbounded();
         OUT.with(|val| val.replace(Some(tx.clone())));
 
-        let out_file = builder.out_file.unwrap_or_else(|| {
-            PathBuf::from(format!(
-                "./trace-{}.json",
-                std::time::SystemTime::UNIX_EPOCH
-                    .elapsed()
-                    .unwrap()
-                    .as_secs()
-            ))
+        let out_writer = builder.out_writer.unwrap_or_else(|| {
+            Box::new(
+                std::fs::File::create(format!(
+                    "./trace-{}.json",
+                    std::time::SystemTime::UNIX_EPOCH
+                        .elapsed()
+                        .unwrap()
+                        .as_secs()
+                ))
+                .expect("Failed to create trace file."),
+            )
         });
 
         let handle = std::thread::spawn(move || {
-            let write = std::fs::File::create(out_file).unwrap();
-            let mut write = BufWriter::new(write);
+            let mut write = BufWriter::new(out_writer);
             write.write_all(b"[\n").unwrap();
 
             let mut has_started = false;

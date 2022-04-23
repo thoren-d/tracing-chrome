@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion, black_box};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use tracing::{info, instrument};
 use tracing_subscriber::prelude::*;
 
@@ -19,31 +19,28 @@ fn instrument_benchmark(c: &mut Criterion) {
         let (layer, _guard) = tracing_chrome::ChromeLayerBuilder::new()
             .include_args(true)
             .include_locations(true)
+            .writer(std::io::sink())
             .build();
         let _subscriber = tracing_subscriber::registry().with(layer).set_default();
-        b.iter(|| {
-            black_box(fibonacci(3))
-        });
+        b.iter(|| black_box(fibonacci(3)));
     });
     group.bench_function("locations", |b| {
         let (layer, _guard) = tracing_chrome::ChromeLayerBuilder::new()
             .include_args(false)
             .include_locations(true)
+            .writer(std::io::sink())
             .build();
         let _subscriber = tracing_subscriber::registry().with(layer).set_default();
-        b.iter(|| {
-            black_box(fibonacci(3))
-        });
+        b.iter(|| black_box(fibonacci(3)));
     });
     group.bench_function("minimal", |b| {
         let (layer, _guard) = tracing_chrome::ChromeLayerBuilder::new()
             .include_args(false)
             .include_locations(false)
+            .writer(std::io::sink())
             .build();
         let _subscriber = tracing_subscriber::registry().with(layer).set_default();
-        b.iter(|| {
-            black_box(fibonacci(3))
-        });
+        b.iter(|| black_box(fibonacci(3)));
     });
 }
 
@@ -55,6 +52,7 @@ fn event_benchmark(c: &mut Criterion) {
         let (layer, _guard) = tracing_chrome::ChromeLayerBuilder::new()
             .include_args(true)
             .include_locations(true)
+            .writer(std::io::sink())
             .build();
         let _subscriber = tracing_subscriber::registry().with(layer).set_default();
         b.iter(|| {
@@ -65,6 +63,7 @@ fn event_benchmark(c: &mut Criterion) {
         let (layer, _guard) = tracing_chrome::ChromeLayerBuilder::new()
             .include_args(false)
             .include_locations(true)
+            .writer(std::io::sink())
             .build();
         let _subscriber = tracing_subscriber::registry().with(layer).set_default();
         b.iter(|| {
@@ -75,6 +74,7 @@ fn event_benchmark(c: &mut Criterion) {
         let (layer, _guard) = tracing_chrome::ChromeLayerBuilder::new()
             .include_args(false)
             .include_locations(false)
+            .writer(std::io::sink())
             .build();
         let _subscriber = tracing_subscriber::registry().with(layer).set_default();
         b.iter(|| {
