@@ -334,7 +334,7 @@ where
                     }
 
                     if ph == "i" {
-                        entry.insert("s", "p".into());
+                        entry.insert("s", "t".into());
                     }
 
                     let mut args = Object::new();
