@@ -1,4 +1,4 @@
-use tracing::instrument;
+use tracing::{info, instrument};
 use tracing_subscriber::prelude::*;
 
 #[instrument]
@@ -16,12 +16,20 @@ fn fibonacci_parallel(n: usize) -> usize {
         fibonacci(n - 1) + fibonacci(n - 2)
     } else {
         let (a, b) = rayon::join(|| fibonacci_parallel(n - 1), || fibonacci_parallel(n - 2));
+        if (a + b) > 1000 {
+            info!("Big number!");
+        }
         a + b
     }
 }
 
 fn main() {
-    let _guard = if std::env::args().any(|arg| arg == "--no-trace") {
+    rayon::ThreadPoolBuilder::new()
+        .thread_name(|idx| format!("Worker {}", idx))
+        .build_global()
+        .expect("Failed to build thread pool.");
+
+    let guard = if std::env::args().any(|arg| arg == "--no-trace") {
         None
     } else {
         let (chrome_layer, guard) = tracing_chrome::ChromeLayerBuilder::new()
@@ -32,9 +40,12 @@ fn main() {
     };
 
     let before = std::time::Instant::now();
-    println!("fibonacci_serial(28) -> {}", fibonacci(28));
+    println!("fibonacci_serial(24) -> {}", fibonacci(24));
     println!("took {} s", before.elapsed().as_secs_f32());
+    if let Some(guard) = &guard {
+        guard.start_new(None);
+    }
     let before = std::time::Instant::now();
-    println!("fibonacci_parallel(28) -> {}", fibonacci_parallel(28));
+    println!("fibonacci_parallel(24) -> {}", fibonacci_parallel(24));
     println!("took {} s", before.elapsed().as_secs_f32());
 }
