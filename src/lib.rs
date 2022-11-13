@@ -288,7 +288,6 @@ impl<S> ChromeLayer<S>
 where
     S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
 {
-
     fn new(mut builder: ChromeLayerBuilder<S>) -> (ChromeLayer<S>, FlushGuard) {
         let (tx, rx) = crossbeam_channel::unbounded();
         OUT.with(|val| val.replace(Some(tx.clone())));
