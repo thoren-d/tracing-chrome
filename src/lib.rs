@@ -325,7 +325,7 @@ where
                         entry.insert("ph", "M".to_string().into());
                         entry.insert("pid", 1.into());
                         entry.insert("name", "thread_name".to_string().into());
-                        entry.insert("tid", tid.clone().into());
+                        entry.insert("tid", (*tid).into());
                         let mut args = Object::new();
                         args.insert("name", name.clone().into());
                         entry.insert("args", args.into());
