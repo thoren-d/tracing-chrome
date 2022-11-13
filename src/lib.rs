@@ -223,6 +223,13 @@ impl FlushGuard {
             self.handle.set(Some(handle));
         }
     }
+
+    pub fn start_new(&self, writer: Option<Box<dyn Write + Send>>) {
+        if let Some(handle) = self.handle.take() {
+            let _ignored = self.sender.send(Message::StartNew(writer));
+            self.handle.set(Some(handle));
+        }
+    }
 }
 
 impl Drop for FlushGuard {
@@ -252,6 +259,7 @@ enum Message {
     NewThread(u64, String),
     Flush,
     Drop,
+    StartNew(Option<Box<dyn Write + Send>>),
 }
 
 /// Represents either an [`Event`](tracing::Event) or [`SpanRef`](tracing_subscriber::registry::SpanRef).
@@ -263,26 +271,31 @@ where
     Span(&'a SpanRef<'b, S>),
 }
 
+fn create_default_writer() -> Box<dyn Write + Send> {
+    Box::new(
+        std::fs::File::create(format!(
+            "./trace-{}.json",
+            std::time::SystemTime::UNIX_EPOCH
+                .elapsed()
+                .unwrap()
+                .as_secs()
+        ))
+        .expect("Failed to create trace file."),
+    )
+}
+
 impl<S> ChromeLayer<S>
 where
     S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
 {
+
     fn new(mut builder: ChromeLayerBuilder<S>) -> (ChromeLayer<S>, FlushGuard) {
         let (tx, rx) = crossbeam_channel::unbounded();
         OUT.with(|val| val.replace(Some(tx.clone())));
 
-        let out_writer = builder.out_writer.unwrap_or_else(|| {
-            Box::new(
-                std::fs::File::create(format!(
-                    "./trace-{}.json",
-                    std::time::SystemTime::UNIX_EPOCH
-                        .elapsed()
-                        .unwrap()
-                        .as_secs()
-                ))
-                .expect("Failed to create trace file."),
-            )
-        });
+        let out_writer = builder
+            .out_writer
+            .unwrap_or_else(|| create_default_writer());
 
         let handle = std::thread::spawn(move || {
             let mut write = BufWriter::new(out_writer);
@@ -295,6 +308,17 @@ where
                     continue;
                 } else if let Message::Drop = &msg {
                     break;
+                } else if let Message::StartNew(writer) = msg {
+                    // Finish off current file
+                    write.write_all(b"\n]").unwrap();
+                    write.flush().unwrap();
+
+                    // Get or create new writer
+                    let out_writer = writer.unwrap_or_else(|| create_default_writer());
+                    write = BufWriter::new(out_writer);
+                    write.write_all(b"[\n").unwrap();
+                    has_started = false;
+                    continue;
                 }
 
                 let mut entry = Object::new();
@@ -310,7 +334,9 @@ where
                         ("e", Some(ts), Some(callsite), Some(root_id))
                     }
                     Message::NewThread(_tid, _name) => ("M", None, None, None),
-                    Message::Flush | Message::Drop => panic!("Was supposed to break by now."),
+                    Message::Flush | Message::Drop | Message::StartNew(_) => {
+                        panic!("Was supposed to break by now.")
+                    }
                 };
                 entry.insert("ph", ph.to_string().into());
                 entry.insert("pid", 1.into());
