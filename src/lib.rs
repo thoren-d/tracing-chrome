@@ -278,7 +278,7 @@ fn create_default_writer() -> Box<dyn Write + Send> {
             std::time::SystemTime::UNIX_EPOCH
                 .elapsed()
                 .unwrap()
-                .as_secs()
+                .as_micros()
         ))
         .expect("Failed to create trace file."),
     )
@@ -288,7 +288,6 @@ impl<S> ChromeLayer<S>
 where
     S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
 {
-
     fn new(mut builder: ChromeLayerBuilder<S>) -> (ChromeLayer<S>, FlushGuard) {
         let (tx, rx) = crossbeam_channel::unbounded();
         OUT.with(|val| val.replace(Some(tx.clone())));
@@ -302,6 +301,7 @@ where
             write.write_all(b"[\n").unwrap();
 
             let mut has_started = false;
+            let mut thread_names: Vec<(u64, String)> = Vec::new();
             for msg in rx {
                 if let Message::Flush = &msg {
                     write.flush().unwrap();
@@ -318,6 +318,23 @@ where
                     write = BufWriter::new(out_writer);
                     write.write_all(b"[\n").unwrap();
                     has_started = false;
+
+                    // Write saved thread names
+                    for (tid, name) in thread_names.iter() {
+                        let mut entry = Object::new();
+                        entry.insert("ph", "M".to_string().into());
+                        entry.insert("pid", 1.into());
+                        entry.insert("name", "thread_name".to_string().into());
+                        entry.insert("tid", (*tid).into());
+                        let mut args = Object::new();
+                        args.insert("name", name.clone().into());
+                        entry.insert("args", args.into());
+                        if has_started {
+                            write.write_all(b",\n").unwrap();
+                        }
+                        write.write_all(entry.dump().as_bytes()).unwrap();
+                        has_started = true;
+                    }
                     continue;
                 }
 
@@ -342,6 +359,7 @@ where
                 entry.insert("pid", 1.into());
 
                 if let Message::NewThread(tid, name) = msg {
+                    thread_names.push((tid, name.clone()));
                     entry.insert("name", "thread_name".to_string().into());
                     entry.insert("tid", tid.into());
                     let mut args = Object::new();
