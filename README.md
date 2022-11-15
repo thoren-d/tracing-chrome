@@ -25,7 +25,7 @@ When `_guard` is dropped, your trace will be in a file like `trace-1668480819035
 
 Open that file with [ui.perfetto.dev](https://ui.perfetto.dev) (or `chrome://tracing`) and take a look at your pretty trace.
 
-![](doc/images/perfetto-screenshot.png)
+![](https://github.com/thoren-d/tracing-chrome/raw/develop/doc/images/perfetto-screenshot.png)
 
 # License
 
