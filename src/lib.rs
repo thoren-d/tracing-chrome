@@ -2,7 +2,7 @@
 
 use crossbeam_channel::Sender;
 
-use tracing::{span, Event, Subscriber};
+use tracing_core::{field::Field, span, Event, Subscriber};
 use tracing_subscriber::{
     layer::Context,
     registry::{LookupSpan, SpanRef},
@@ -607,7 +607,7 @@ struct JsonVisitor<'a> {
 }
 
 impl<'a> tracing_subscriber::field::Visit for JsonVisitor<'a> {
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
         self.object
             .insert(field.name(), JsonValue::String(format!("{:?}", value)));
     }
