@@ -261,7 +261,7 @@ enum Message {
     StartNew(Option<Box<dyn Write + Send>>),
 }
 
-/// Represents either an [`Event`](tracing::Event) or [`SpanRef`](tracing_subscriber::registry::SpanRef).
+/// Represents either an [`Event`](tracing_core::Event) or [`SpanRef`](tracing_subscriber::registry::SpanRef).
 pub enum EventOrSpan<'a, 'b, S>
 where
     S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
