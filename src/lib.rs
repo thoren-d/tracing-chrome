@@ -1,16 +1,4 @@
-/*!
-A tracing [Layer](`ChromeLayer`) for generating a trace that can be viewed by the Chrome Trace Viewer at `chrome://tracing`.
-
-# Usage
-```no_run
-use tracing_chrome::ChromeLayerBuilder;
-use tracing_subscriber::{registry::Registry, prelude::*};
-
-let (chrome_layer, _guard) = ChromeLayerBuilder::new().build();
-tracing_subscriber::registry().with(chrome_layer).init();
-```
-
-*/
+#![doc = include_str!("../README.md")]
 
 use crossbeam_channel::Sender;
 
@@ -109,11 +97,12 @@ where
 
     /// Set the file to which to output the trace.
     ///
-    /// Defaults to `./trace-{unix epoch time}.json`.
+    /// Defaults to `./trace-{unix epoch in micros}.json`.
     ///
     /// # Panics
     ///
-    /// If `file` could not be opened/created.
+    /// If `file` could not be opened/created. To handle errors,
+    /// open a file and pass it to [`writer`](crate::ChromeLayerBuilder::writer) instead.
     pub fn file<P: AsRef<Path>>(self, file: P) -> Self {
         self.writer(std::fs::File::create(file).expect("Failed to create trace file."))
     }
@@ -135,7 +124,9 @@ where
 
     /// Include arguments in each trace entry.
     ///
-    /// Defaults to false. Includes the arguments used when creating a span/event
+    /// Defaults to `false`.
+    ///
+    /// Includes the arguments used when creating a span/event
     /// in the "args" section of the trace entry.
     pub fn include_args(mut self, include: bool) -> Self {
         self.include_args = include;
@@ -144,7 +135,9 @@ where
 
     /// Include file+line with each trace entry.
     ///
-    /// Defaults to true. This can add quite a bit of data to the output so turning
+    /// Defaults to `true`.
+    ///
+    /// This can add quite a bit of data to the output so turning
     /// it off might be helpful when collecting larger traces.
     pub fn include_locations(mut self, include: bool) -> Self {
         self.include_locations = include;
@@ -152,6 +145,7 @@ where
     }
 
     /// Sets the style used when recording trace events.
+    ///
     /// See [`TraceStyle`](crate::TraceStyle) for details.
     pub fn trace_style(mut self, style: TraceStyle) -> Self {
         self.trace_style = style;
@@ -224,6 +218,11 @@ impl FlushGuard {
         }
     }
 
+    /// Finishes the current trace and starts a new one.
+    ///
+    /// If a [`Write`](std::io::Write) implementation is supplied,
+    /// the new trace is written to it. Otherwise, the new trace
+    /// goes to `./trace-{unix epoc in micros}.json`.
     pub fn start_new(&self, writer: Option<Box<dyn Write + Send>>) {
         if let Some(handle) = self.handle.take() {
             let _ignored = self.sender.send(Message::StartNew(writer));

@@ -8,10 +8,11 @@ tracing-chrome
 
 # Overview
 
-tracing-chrome is a Layer for [tracing-subscriber](https://crates.io/crates/tracing-subscriber) that outputs traces in Chrome's trace viewer format that can be viewed at `chrome://tracing`.
+tracing-chrome is a Layer for [tracing-subscriber](https://crates.io/crates/tracing-subscriber) that outputs traces in Chrome's trace viewer format that can be viewed with `chrome://tracing` or [ui.perfetto.dev](https://ui.perfetto.dev).
 
 # Usage
 
+Add this near the beginning of `main`:
 ```rust
 use tracing_chrome::ChromeLayerBuilder;
 use tracing_subscriber::{registry::Registry, prelude::*};
@@ -19,3 +20,17 @@ use tracing_subscriber::{registry::Registry, prelude::*};
 let (chrome_layer, _guard) = ChromeLayerBuilder::new().build();
 tracing_subscriber::registry().with(chrome_layer).init();
 ```
+
+When `_guard` is dropped, your trace will be in a file like `trace-1668480819035032.json`.
+
+Open that file with [ui.perfetto.dev](https://ui.perfetto.dev) (or `chrome://tracing`) and take a look at your pretty trace.
+
+![](doc/images/perfetto-screenshot.png)
+
+# License
+
+Licensed under the [MIT license](http://opensource.org/licenses/MIT)
+
+## Contributions
+
+Unless you state otherwise, any contribution intentionally submitted for inclusion in the work shall be licensed as above.
