@@ -1,7 +1,5 @@
 #![doc = include_str!("../README.md")]
 
-use crossbeam_channel::Sender;
-
 use tracing_core::{field::Field, span, Event, Subscriber};
 use tracing_subscriber::{
     layer::Context,
@@ -20,6 +18,8 @@ use std::{
 };
 
 use std::io::{BufWriter, Write};
+use std::sync::mpsc;
+use std::sync::mpsc::Sender;
 use std::{
     cell::{Cell, RefCell},
     thread::JoinHandle,
@@ -288,7 +288,7 @@ where
     S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
 {
     fn new(mut builder: ChromeLayerBuilder<S>) -> (ChromeLayer<S>, FlushGuard) {
-        let (tx, rx) = crossbeam_channel::unbounded();
+        let (tx, rx) = mpsc::channel();
         OUT.with(|val| val.replace(Some(tx.clone())));
 
         let out_writer = builder
