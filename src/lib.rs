@@ -382,8 +382,8 @@ where
 
                     let mut args = Object::new();
                     if let (Some(file), Some(line)) = (callsite.file, callsite.line) {
-                        args.insert("[file]", file.to_string().into());
-                        args.insert("[line]", line.into());
+                        args.insert(".file", file.to_string().into());
+                        args.insert(".line", line.into());
                     }
 
                     if let Some(call_args) = &callsite.args {
