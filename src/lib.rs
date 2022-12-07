@@ -609,7 +609,7 @@ struct JsonVisitor<'a> {
 impl<'a> tracing_subscriber::field::Visit for JsonVisitor<'a> {
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
         self.object
-            .insert(field.name(), JsonValue::String(format!("{:?}", value)));
+            .insert(field.name(), JsonValue::String(format!("{value:?}")));
     }
 }
 
