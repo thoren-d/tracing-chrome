@@ -25,7 +25,7 @@ fn fibonacci_parallel(n: usize) -> usize {
 
 fn main() {
     rayon::ThreadPoolBuilder::new()
-        .thread_name(|idx| format!("Worker {}", idx))
+        .thread_name(|idx| format!("Worker {idx}"))
         .build_global()
         .expect("Failed to build thread pool.");
 
