@@ -64,6 +64,7 @@ where
 }
 
 /// Decides how traces will be recorded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TraceStyle {
     /// Traces will be recorded as a group of threads.
     /// In this style, spans should be entered and exited on the same thread.
@@ -253,7 +254,7 @@ struct Callsite {
 
 enum Message {
     Enter(f64, Callsite, Option<u64>),
-    Event(f64, Callsite),
+    Event(f64, Callsite, Option<u64>),
     Exit(f64, Callsite, Option<u64>),
     NewThread(u64, String),
     Flush,
@@ -344,7 +345,10 @@ where
                     Message::Enter(ts, callsite, Some(root_id)) => {
                         ("b", Some(ts), Some(callsite), Some(root_id))
                     }
-                    Message::Event(ts, callsite) => ("i", Some(ts), Some(callsite), None),
+                    Message::Event(ts, callsite, None) => ("i", Some(ts), Some(callsite), None),
+                    Message::Event(ts, callsite, Some(root_id)) => {
+                        ("n", Some(ts), Some(callsite), Some(root_id))
+                    }
                     Message::Exit(ts, callsite, None) => ("E", Some(ts), Some(callsite), None),
                     Message::Exit(ts, callsite, Some(root_id)) => {
                         ("e", Some(ts), Some(callsite), Some(root_id))
@@ -381,6 +385,11 @@ where
                     }
 
                     let mut args = Object::new();
+
+                    if let Some(&id) = id {
+                        args.insert("id", id.into());
+                    }
+
                     if let (Some(file), Some(line)) = (callsite.file, callsite.line) {
                         args.insert(".file", file.to_string().into());
                         args.insert(".line", line.into());
@@ -562,10 +571,16 @@ where
         }
     }
 
-    fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+    fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
         let ts = self.get_ts();
         let callsite = self.get_callsite(EventOrSpan::Event(event));
-        self.send_message(Message::Event(ts, callsite));
+        let root_id =
+            if let (TraceStyle::Async, Some(span)) = (self.trace_style, ctx.event_span(event)) {
+                Some(ChromeLayer::get_root_id(span))
+            } else {
+                None
+            };
+        self.send_message(Message::Event(ts, callsite, root_id));
     }
 
     fn on_exit(&self, id: &span::Id, ctx: Context<'_, S>) {
