@@ -7,7 +7,7 @@ use tracing_subscriber::{
     Layer,
 };
 
-use json::{number::Number, object::Object, JsonValue};
+use serde_json::{json, Value as JsonValue};
 use std::{
     marker::PhantomData,
     path::Path,
@@ -31,6 +31,7 @@ thread_local! {
 }
 
 type NameFn<S> = Box<dyn Fn(&EventOrSpan<'_, '_, S>) -> String + Send + Sync>;
+type Object = serde_json::Map<String, JsonValue>;
 
 /// A [`Layer`](tracing_subscriber::Layer) that writes a Chrome trace file.
 pub struct ChromeLayer<S>
@@ -64,19 +65,15 @@ where
 }
 
 /// Decides how traces will be recorded.
+#[derive(Default)]
 pub enum TraceStyle {
     /// Traces will be recorded as a group of threads.
     /// In this style, spans should be entered and exited on the same thread.
+    #[default]
     Threaded,
 
     /// Traces will recorded as a group of asynchronous operations.
     Async,
-}
-
-impl Default for TraceStyle {
-    fn default() -> Self {
-        TraceStyle::Threaded
-    }
 }
 
 impl<S> ChromeLayerBuilder<S>
@@ -320,24 +317,24 @@ where
 
                     // Write saved thread names
                     for (tid, name) in thread_names.iter() {
-                        let mut entry = Object::new();
-                        entry.insert("ph", "M".to_string().into());
-                        entry.insert("pid", 1.into());
-                        entry.insert("name", "thread_name".to_string().into());
-                        entry.insert("tid", (*tid).into());
-                        let mut args = Object::new();
-                        args.insert("name", name.clone().into());
-                        entry.insert("args", args.into());
+                        let entry = json!({
+                            "ph": "M",
+                            "pid": 1,
+                            "name": "thread_name",
+                            "tid": *tid,
+                            "args": {
+                                "name": name,
+                            },
+                        });
+
                         if has_started {
                             write.write_all(b",\n").unwrap();
                         }
-                        write.write_all(entry.dump().as_bytes()).unwrap();
+                        serde_json::to_writer(&mut write, &entry).unwrap();
                         has_started = true;
                     }
                     continue;
                 }
-
-                let mut entry = Object::new();
 
                 let (ph, ts, callsite, id) = match &msg {
                     Message::Enter(ts, callsite, None) => ("B", Some(ts), Some(callsite), None),
@@ -354,53 +351,48 @@ where
                         panic!("Was supposed to break by now.")
                     }
                 };
-                entry.insert("ph", ph.to_string().into());
-                entry.insert("pid", 1.into());
+                let mut entry = json!({
+                    "ph": ph,
+                    "pid": 1,
+                });
 
                 if let Message::NewThread(tid, name) = msg {
                     thread_names.push((tid, name.clone()));
-                    entry.insert("name", "thread_name".to_string().into());
-                    entry.insert("tid", tid.into());
-                    let mut args = Object::new();
-                    args.insert("name", name.into());
-                    entry.insert("args", args.into());
+                    entry["name"] = "thread_name".into();
+                    entry["tid"] = tid.into();
+                    entry["args"] = json!({ "name": name });
                 } else {
                     let ts = ts.unwrap();
                     let callsite = callsite.unwrap();
-                    entry.insert("ts", JsonValue::Number(Number::from(*ts)));
-                    entry.insert("name", callsite.name.clone().into());
-                    entry.insert("cat", callsite.target.clone().into());
-                    entry.insert("tid", callsite.tid.into());
+                    entry["ts"] = (*ts).into();
+                    entry["name"] = callsite.name.clone().into();
+                    entry["cat"] = callsite.target.clone().into();
+                    entry["tid"] = callsite.tid.into();
 
                     if let Some(&id) = id {
-                        entry.insert("id", id.into());
+                        entry["id"] = id.into();
                     }
 
                     if ph == "i" {
-                        entry.insert("s", "t".into());
+                        entry["s"] = "t".into();
                     }
 
-                    let mut args = Object::new();
                     if let (Some(file), Some(line)) = (callsite.file, callsite.line) {
-                        args.insert(".file", file.to_string().into());
-                        args.insert(".line", line.into());
+                        entry[".file"] = file.into();
+                        entry[".line"] = line.into();
                     }
 
                     if let Some(call_args) = &callsite.args {
-                        for (k, v) in call_args.iter() {
-                            args.insert(k, v.clone());
+                        if !call_args.is_empty() {
+                            entry["args"] = (**call_args).clone().into();
                         }
-                    }
-
-                    if !args.is_empty() {
-                        entry.insert("args", args.into());
                     }
                 }
 
                 if has_started {
                     write.write_all(b",\n").unwrap();
                 }
-                write.write_all(entry.dump().as_bytes()).unwrap();
+                serde_json::to_writer(&mut write, &entry).unwrap();
                 has_started = true;
             }
 
@@ -603,13 +595,13 @@ where
 }
 
 struct JsonVisitor<'a> {
-    object: &'a mut json::object::Object,
+    object: &'a mut Object,
 }
 
 impl<'a> tracing_subscriber::field::Visit for JsonVisitor<'a> {
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
         self.object
-            .insert(field.name(), JsonValue::String(format!("{value:?}")));
+            .insert(field.name().to_owned(), format!("{value:?}").into());
     }
 }
 
