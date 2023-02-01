@@ -215,14 +215,23 @@ impl FlushGuard {
         }
     }
 
-    /// Finishes the current trace and starts a new one.
+    /// Starts a new trace, if one was already running it will stop the current trace.
     ///
     /// If a [`Write`](std::io::Write) implementation is supplied,
     /// the new trace is written to it. Otherwise, the new trace
     /// goes to `./trace-{unix epoc in micros}.json`.
-    pub fn start_new(&self, writer: Option<Box<dyn Write + Send>>) {
+    pub fn start_capture(&self, writer: Option<Box<dyn Write + Send>>) {
         if let Some(handle) = self.handle.take() {
-            let _ignored = self.sender.send(Message::StartNew(writer));
+            let _ignored = self.sender.send(Message::StartCapture(writer));
+            self.handle.set(Some(handle));
+        }
+    }
+
+    /// Stops the current trace.
+    ///
+    pub fn stop_capture(&self) {
+        if let Some(handle) = self.handle.take() {
+            let _ignored = self.sender.send(Message::StopCapture);
             self.handle.set(Some(handle));
         }
     }
@@ -255,7 +264,8 @@ enum Message {
     NewThread(u64, String),
     Flush,
     Drop,
-    StartNew(Option<Box<dyn Write + Send>>),
+    StopCapture,
+    StartCapture(Option<Box<dyn Write + Send>>),
 }
 
 /// Represents either an [`Event`](tracing_core::Event) or [`SpanRef`](tracing_subscriber::registry::SpanRef).
@@ -298,13 +308,14 @@ where
 
             let mut has_started = false;
             let mut thread_names: Vec<(u64, String)> = Vec::new();
+            let mut capturing = false;
             for msg in rx {
                 if let Message::Flush = &msg {
                     write.flush().unwrap();
                     continue;
                 } else if let Message::Drop = &msg {
                     break;
-                } else if let Message::StartNew(writer) = msg {
+                } else if let Message::StartCapture(writer) = msg {
                     // Finish off current file
                     write.write_all(b"\n]").unwrap();
                     write.flush().unwrap();
@@ -314,6 +325,7 @@ where
                     write = BufWriter::new(out_writer);
                     write.write_all(b"[\n").unwrap();
                     has_started = false;
+                    capturing = true;
 
                     // Write saved thread names
                     for (tid, name) in thread_names.iter() {
@@ -334,6 +346,18 @@ where
                         has_started = true;
                     }
                     continue;
+                } else if let Message::StopCapture = msg {
+                    if capturing {
+                        // Finish off current file
+                        write.write_all(b"\n]").unwrap();
+                        write.flush().unwrap();
+                    }
+
+                    capturing = false;
+                }
+
+                if !capturing {
+                    continue;
                 }
 
                 let (ph, ts, callsite, id) = match &msg {
@@ -347,9 +371,10 @@ where
                         ("e", Some(ts), Some(callsite), Some(root_id))
                     }
                     Message::NewThread(_tid, _name) => ("M", None, None, None),
-                    Message::Flush | Message::Drop | Message::StartNew(_) => {
-                        panic!("Was supposed to break by now.")
-                    }
+                    Message::Flush
+                    | Message::Drop
+                    | Message::StartCapture(_)
+                    | Message::StopCapture => panic!("Was supposed to break by now."),
                 };
                 let mut entry = json!({
                     "ph": ph,

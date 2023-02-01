@@ -43,13 +43,13 @@ fn main() {
     println!("fibonacci_serial(24) -> {}", fibonacci(24));
     println!("took {} s", before.elapsed().as_secs_f32());
     if let Some(guard) = &guard {
-        guard.start_new(None);
+        guard.start_capture(None);
     }
     let before = std::time::Instant::now();
     println!("fibonacci_parallel(24) -> {}", fibonacci_parallel(24));
     println!("took {} s", before.elapsed().as_secs_f32());
     if let Some(guard) = &guard {
-        guard.start_new(None);
+        guard.start_capture(None);
     }
     let before = std::time::Instant::now();
     println!("fibonacci_parallel(20) -> {}", fibonacci_parallel(20));
