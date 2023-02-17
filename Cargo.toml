@@ -12,6 +12,8 @@ license = "MIT"
 readme = "README.md"
 repository = "https://github.com/thoren-d/tracing-chrome"
 
+exclude = ["/doc"]
+
 [dependencies]
 serde_json = "1.0.91"
 tracing-core = "0.1.30"
