@@ -17,7 +17,7 @@ exclude = ["/doc"]
 [dependencies]
 serde_json = "1.0.93"
 tracing-core = "0.1.30"
-tracing-subscriber = "0.3.16"
+tracing-subscriber = { version = "0.3.16", default-features = false, features = ["std"] }
 
 
 [dev-dependencies]
