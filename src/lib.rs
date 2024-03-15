@@ -26,8 +26,8 @@ use std::{
 };
 
 thread_local! {
-    static OUT: RefCell<Option<Sender<Message>>> = RefCell::new(None);
-    static TID: RefCell<Option<usize>> = RefCell::new(None);
+    static OUT: RefCell<Option<Sender<Message>>> = const { RefCell::new(None) };
+    static TID: RefCell<Option<usize>> = const { RefCell::new(None) };
 }
 
 type NameFn<S> = Box<dyn Fn(&EventOrSpan<'_, '_, S>) -> String + Send + Sync>;
@@ -454,7 +454,8 @@ where
             EventOrSpan::Span(s) => s
                 .extensions()
                 .get::<ArgsWrapper>()
-                .map(|e| Arc::clone(&e.args)),
+                .map(|e| &e.args)
+                .cloned(),
         };
         let name = name.unwrap_or_else(|| meta.name().into());
         let target = target.unwrap_or_else(|| meta.target().into());
