@@ -12,7 +12,7 @@ use std::{
     marker::PhantomData,
     path::Path,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
     },
 };
@@ -26,8 +26,8 @@ use std::{
 };
 
 thread_local! {
-    static OUT: RefCell<Option<Sender<Message>>> = RefCell::new(None);
-    static TID: RefCell<Option<u64>> = RefCell::new(None);
+    static OUT: RefCell<Option<Sender<Message>>> = const { RefCell::new(None) };
+    static TID: RefCell<Option<usize>> = const { RefCell::new(None) };
 }
 
 type NameFn<S> = Box<dyn Fn(&EventOrSpan<'_, '_, S>) -> String + Send + Sync>;
@@ -40,7 +40,7 @@ where
 {
     out: Arc<Mutex<Sender<Message>>>,
     start: std::time::Instant,
-    max_tid: AtomicU64,
+    max_tid: AtomicUsize,
     include_args: bool,
     include_locations: bool,
     trace_style: TraceStyle,
@@ -88,7 +88,7 @@ where
             include_args: false,
             include_locations: true,
             trace_style: TraceStyle::Threaded,
-            _inner: PhantomData::default(),
+            _inner: PhantomData,
         }
     }
 
@@ -240,7 +240,7 @@ impl Drop for FlushGuard {
 }
 
 struct Callsite {
-    tid: u64,
+    tid: usize,
     name: String,
     target: String,
     file: Option<&'static str>,
@@ -252,7 +252,7 @@ enum Message {
     Enter(f64, Callsite, Option<u64>),
     Event(f64, Callsite),
     Exit(f64, Callsite, Option<u64>),
-    NewThread(u64, String),
+    NewThread(usize, String),
     Flush,
     Drop,
     StartNew(Option<Box<dyn Write + Send>>),
@@ -297,7 +297,7 @@ where
             write.write_all(b"[\n").unwrap();
 
             let mut has_started = false;
-            let mut thread_names: Vec<(u64, String)> = Vec::new();
+            let mut thread_names: Vec<(usize, String)> = Vec::new();
             for msg in rx {
                 if let Message::Flush = &msg {
                     write.flush().unwrap();
@@ -407,19 +407,19 @@ where
         let layer = ChromeLayer {
             out: Arc::new(Mutex::new(tx)),
             start: std::time::Instant::now(),
-            max_tid: AtomicU64::new(0),
+            max_tid: AtomicUsize::new(0),
             name_fn: builder.name_fn.take(),
             cat_fn: builder.cat_fn.take(),
             include_args: builder.include_args,
             include_locations: builder.include_locations,
             trace_style: builder.trace_style,
-            _inner: PhantomData::default(),
+            _inner: PhantomData,
         };
 
         (layer, guard)
     }
 
-    fn get_tid(&self) -> (u64, bool) {
+    fn get_tid(&self) -> (usize, bool) {
         TID.with(|value| {
             let tid = *value.borrow();
             match tid {
@@ -454,7 +454,8 @@ where
             EventOrSpan::Span(s) => s
                 .extensions()
                 .get::<ArgsWrapper>()
-                .map(|e| Arc::clone(&e.args)),
+                .map(|e| &e.args)
+                .cloned(),
         };
         let name = name.unwrap_or_else(|| meta.name().into());
         let target = target.unwrap_or_else(|| meta.target().into());
