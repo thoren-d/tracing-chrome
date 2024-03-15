@@ -12,7 +12,7 @@ use std::{
     marker::PhantomData,
     path::Path,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
     },
 };
@@ -40,7 +40,7 @@ where
 {
     out: Arc<Mutex<Sender<Message>>>,
     start: std::time::Instant,
-    max_tid: AtomicU64,
+    max_tid: AtomicUsize,
     include_args: bool,
     include_locations: bool,
     trace_style: TraceStyle,
@@ -407,7 +407,7 @@ where
         let layer = ChromeLayer {
             out: Arc::new(Mutex::new(tx)),
             start: std::time::Instant::now(),
-            max_tid: AtomicU64::new(0),
+            max_tid: AtomicUsize::new(0),
             name_fn: builder.name_fn.take(),
             cat_fn: builder.cat_fn.take(),
             include_args: builder.include_args,
